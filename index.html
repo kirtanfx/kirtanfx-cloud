@@ -1,52 +1,273 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KirtanFX</title>
+<link rel="icon" type="image/webp" href="https://kirtanfx.com/wp-content/uploads/2025/05/cropped-kirtan-fx-logo-png-1.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
 
-  <title>KirtanFX</title>
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    /* CSS fallback if WebGL is unavailable or reduced-motion is on */
+    background:
+      radial-gradient(120% 90% at 50% 100%, #2a1049 0%, transparent 60%),
+      linear-gradient(to bottom, #05030c 0%, #0d0720 55%, #1b0d38 100%);
+    font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  }
 
-  <link rel="icon" type="image/webp" href="https://kirtanfx.com/wp-content/uploads/2025/05/cropped-kirtan-fx-logo-png-1.webp">
+  #sky {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 900ms ease;
+  }
 
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+  #sky[data-ready="true"] { opacity: 1; }
 
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #0d0d0f;
-      color: #ffffff;
-      font-family: Arial, sans-serif;
-    }
+  /* vignette so the centered text always holds contrast */
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: radial-gradient(ellipse 70% 55% at 50% 50%, rgba(4,2,10,0.55) 0%, rgba(4,2,10,0.15) 55%, transparent 80%);
+  }
 
-    .container {
-      text-align: center;
-      padding: 30px;
-    }
+  h1 {
+    position: relative;
+    z-index: 2;
+    padding: 0 24px;
+    text-align: center;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: clamp(2.25rem, 6.5vw, 5rem);
+    line-height: 1.06;
+    letter-spacing: -0.035em;
+    text-shadow: 0 2px 50px rgba(0, 0, 0, 0.6);
+  }
 
-    h1 {
-      font-size: clamp(2.5rem, 8vw, 5rem);
-      letter-spacing: -2px;
-      margin-bottom: 12px;
-    }
-
-    p {
-      color: #888;
-      font-size: 1rem;
-    }
-  </style>
+  @media (prefers-reduced-motion: reduce) {
+    #sky { display: none; }
+  }
+</style>
 </head>
-
 <body>
-  <div class="container">
-    <h1>Coming Soon</h1>
-    <p>Something is in the works.</p>
-  </div>
+
+  <canvas id="sky"></canvas>
+  <div class="veil"></div>
+
+  <h1>KirtanFX is cooking.</h1>
+
+<script>
+(function () {
+  var canvas = document.getElementById('sky');
+  if (!canvas) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var VERT = [
+    'attribute vec2 a_pos;',
+    'varying vec2 v_uv;',
+    'void main(){ v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }'
+  ].join('\n');
+
+  var FRAG = [
+    'precision highp float;',
+    'varying vec2 v_uv;',
+    'uniform float u_time;',
+    'uniform vec2  u_res;',
+
+    // cheap deterministic hash -> value noise -> fbm
+    'float hash(vec2 p){',
+    '  p = fract(p * vec2(127.13, 311.7));',
+    '  p += dot(p, p + 41.27);',
+    '  return fract(p.x * p.y);',
+    '}',
+    'float vnoise(vec2 p){',
+    '  vec2 i = floor(p), f = fract(p);',
+    '  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);',
+    '  float a = hash(i);',
+    '  float b = hash(i + vec2(1.0, 0.0));',
+    '  float c = hash(i + vec2(0.0, 1.0));',
+    '  float d = hash(i + vec2(1.0, 1.0));',
+    '  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);',
+    '}',
+    'float fbm(vec2 p){',
+    '  float sum = 0.0, amp = 0.5, norm = 0.0;',
+    '  mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);',
+    '  for (int i = 0; i < 6; i++){',
+    '    sum  += amp * vnoise(p);',
+    '    norm += amp;',
+    '    p = rot * p * 2.07 + 4.1;',
+    '    amp *= 0.52;',
+    '  }',
+    '  return sum / norm;',
+    '}',
+
+    'float stars(vec2 uv){',
+    '  vec2 g = uv * 150.0;',
+    '  vec2 id = floor(g), f = fract(g) - 0.5;',
+    '  float h = hash(id + 7.3);',
+    '  float on = step(0.972, h);',
+    '  float pt = smoothstep(0.14, 0.0, length(f)) * on;',
+    '  float tw = 0.5 + 0.5 * sin(u_time * 1.6 + h * 57.0);',
+    '  return pt * tw;',
+    '}',
+
+    'void main(){',
+    '  vec2 uv = v_uv;',
+    '  float aspect = u_res.x / u_res.y;',
+    '  vec2 p = vec2(uv.x * aspect, uv.y);',
+
+    // slow horizontal drift
+    '  vec2 base = vec2(p.x * 0.9, p.y * 1.15) - vec2(u_time * 0.0075, 0.0);',
+
+    // domain warp for wispy, non-blobby cloud edges
+    '  float warp = fbm(base * 0.65) - 0.5;',
+    '  vec2 q = base * 2.2 - warp * 1.2;',
+    '  float ridged = 0.0, w = 0.65;',
+    '  mat2 M = mat2(1.45, 1.0, -1.0, 1.45);',
+    '  vec2 t = q;',
+    '  for (int i = 0; i < 6; i++){',
+    '    ridged += abs(w * (vnoise(t) * 2.0 - 1.0));',
+    '    t = M * t;',
+    '    w *= 0.70;',
+    '  }',
+    '  float detail = fbm(q * 1.15);',
+    '  float field = ridged * (0.55 + 0.9 * detail);',
+
+    // coverage / softness
+    '  float amt = smoothstep(0.40, 1.02, field);',
+
+    // night palette, purple-leaning toward the horizon
+    '  vec3 skyTop = vec3(0.020, 0.012, 0.047);',
+    '  vec3 skyHor = vec3(0.145, 0.055, 0.255);',
+    '  vec3 sky = mix(skyHor, skyTop, pow(clamp(uv.y, 0.0, 1.0), 0.75));',
+
+    // clouds lit faintly from below, tinted with the brand violet
+    '  float lift = smoothstep(0.85, 0.0, uv.y);',
+    '  vec3 cloudCol = mix(vec3(0.20, 0.16, 0.34), vec3(0.52, 0.30, 0.76), lift);',
+    '  cloudCol *= 0.65 + 0.75 * detail;',
+    '  vec3 col = mix(sky, clamp(0.35 * sky + cloudCol, 0.0, 1.0), amt);',
+
+    // stars only in clear upper sky
+    '  float s = stars(vec2(uv.x * aspect, uv.y * 0.75));',
+    '  s *= (1.0 - amt) * smoothstep(0.10, 0.6, uv.y);',
+    '  col += vec3(0.88, 0.86, 1.0) * s;',
+
+    // dither to kill banding across the big gradient
+    '  float dth = (hash(gl_FragCoord.xy) - 0.5) / 255.0;',
+    '  gl_FragColor = vec4(col + dth, 1.0);',
+    '}'
+  ].join('\n');
+
+  var gl = null;
+  try {
+    gl = canvas.getContext('webgl', { antialias: false, alpha: false })
+      || canvas.getContext('experimental-webgl');
+  } catch (e) { return; }
+  if (!gl) return;
+
+  function compile(src, type) {
+    var sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(sh));
+      return null;
+    }
+    return sh;
+  }
+
+  var vs = compile(VERT, gl.VERTEX_SHADER);
+  var fs = vs && compile(FRAG, gl.FRAGMENT_SHADER);
+  if (!vs || !fs) return;
+
+  var prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(prog));
+    return;
+  }
+  gl.useProgram(prog);
+
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1, 1, -1, -1, 1,
+    -1, 1, 1, -1, 1, 1
+  ]), gl.STATIC_DRAW);
+
+  var aPos = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  var uTime = gl.getUniformLocation(prog, 'u_time');
+  var uRes = gl.getUniformLocation(prog, 'u_res');
+
+  var dpr = Math.min(window.devicePixelRatio || 1, window.innerWidth < 720 ? 1.5 : 2);
+
+  function resize() {
+    var w = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    var h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, w, h);
+    gl.uniform2f(uRes, w, h);
+  }
+
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 120);
+  });
+  resize();
+
+  var fpsCap = window.innerWidth < 720 ? 24 : 30;
+  var start = performance.now();
+  var last = 0;
+  var shown = false;
+
+  function frame(now) {
+    if (gl.isContextLost()) return;
+    if (document.hidden) { requestAnimationFrame(frame); return; }
+    if (now - last >= 1000 / fpsCap) {
+      last = now;
+      gl.uniform1f(uTime, (now - start) / 1000);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if (!shown) {
+        shown = true;
+        canvas.dataset.ready = 'true';
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  canvas.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    canvas.dataset.ready = 'false';
+  });
+})();
+</script>
+
 </body>
 </html>
