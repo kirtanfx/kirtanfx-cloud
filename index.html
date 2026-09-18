@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#05030c" />
-<meta name="color-scheme" content="dark" />
+<meta name="theme-color" id="theme-color" content="#05030c" />
+<meta name="color-scheme" content="dark light" />
 <title>KirtanFX</title>
 <link rel="icon" type="image/webp" href="https://kirtanfx.com/wp-content/uploads/2025/05/cropped-kirtan-fx-logo-png-1.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +16,6 @@
   html {
     height: 100%;
     background: #05030c;
-    color-scheme: dark;
   }
 
   body {
@@ -29,11 +28,9 @@
     justify-content: center;
     overflow: hidden;
     position: relative;
-    /* CSS fallback if WebGL is unavailable or reduced-motion is on */
-    background:
-      radial-gradient(120% 90% at 50% 100%, #2a1049 0%, transparent 60%),
-      linear-gradient(to bottom, #05030c 0%, #0d0720 55%, #1b0d38 100%);
+    background: linear-gradient(to bottom, #05030c 0%, #1b0d38 100%);
     font-family: 'Geist', system-ui, -apple-system, sans-serif;
+    transition: background 1200ms ease;
   }
 
   #sky {
@@ -50,13 +47,13 @@
 
   #sky[data-ready="true"] { opacity: 1; }
 
-  /* vignette so the centered text always holds contrast */
   .veil {
     position: fixed;
     inset: 0;
     z-index: 1;
     pointer-events: none;
     background: radial-gradient(ellipse 70% 55% at 50% 50%, rgba(4,2,10,0.55) 0%, rgba(4,2,10,0.15) 55%, transparent 80%);
+    transition: opacity 1200ms ease;
   }
 
   h1 {
@@ -72,7 +69,8 @@
     font-size: clamp(1.875rem, 5vw, 3.5rem);
     line-height: 1.08;
     letter-spacing: -0.035em;
-    text-shadow: 0 2px 50px rgba(0, 0, 0, 0.6);
+    text-shadow: 0 2px 50px rgba(0, 0, 0, 0.55);
+    transition: color 1200ms ease, text-shadow 1200ms ease;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -83,12 +81,90 @@
 <body>
 
   <canvas id="sky"></canvas>
-  <div class="veil"></div>
+  <div class="veil" id="veil"></div>
 
-  <h1>KirtanFX is cooking.</h1>
+  <h1 id="headline">KirtanFX is cooking.</h1>
 
 <script>
 (function () {
+
+  /* ---------- palette keyframes across a 24h day, violet family throughout ---------- */
+  /* p = position in day (0 = midnight, 0.5 = noon, 1 = midnight again) */
+  var KEYS = [
+    { p: 0.00, top: [0.018, 0.010, 0.042], hor: [0.115, 0.045, 0.210], cloudLo: [0.17, 0.14, 0.30], cloudHi: [0.42, 0.24, 0.64], stars: 1.00, ink: 1, veil: 1.00 },
+    { p: 0.17, top: [0.020, 0.012, 0.047], hor: [0.145, 0.055, 0.255], cloudLo: [0.20, 0.16, 0.34], cloudHi: [0.52, 0.30, 0.76], stars: 1.00, ink: 1, veil: 1.00 }, // ~4am
+    { p: 0.25, top: [0.130, 0.090, 0.260], hor: [0.480, 0.240, 0.420], cloudLo: [0.40, 0.28, 0.50], cloudHi: [0.82, 0.52, 0.72], stars: 0.35, ink: 1, veil: 0.80 }, // 6am dawn
+    { p: 0.33, top: [0.360, 0.300, 0.620], hor: [0.820, 0.660, 0.880], cloudLo: [0.80, 0.74, 0.92], cloudHi: [1.00, 0.94, 1.00], stars: 0.00, ink: 0, veil: 0.22 }, // 8am
+    { p: 0.50, top: [0.420, 0.370, 0.740], hor: [0.880, 0.830, 0.980], cloudLo: [0.94, 0.92, 1.00], cloudHi: [1.02, 1.00, 1.03], stars: 0.00, ink: 0, veil: 0.14 }, // noon
+    { p: 0.67, top: [0.380, 0.310, 0.680], hor: [0.900, 0.740, 0.880], cloudLo: [0.90, 0.82, 0.96], cloudHi: [1.02, 0.94, 1.00], stars: 0.00, ink: 0, veil: 0.22 }, // 4pm
+    { p: 0.79, top: [0.180, 0.110, 0.360], hor: [0.640, 0.260, 0.480], cloudLo: [0.46, 0.30, 0.56], cloudHi: [0.88, 0.46, 0.80], stars: 0.30, ink: 1, veil: 0.78 }, // 7pm dusk
+    { p: 0.88, top: [0.030, 0.018, 0.070], hor: [0.185, 0.070, 0.300], cloudLo: [0.22, 0.17, 0.36], cloudHi: [0.56, 0.32, 0.80], stars: 0.90, ink: 1, veil: 1.00 }, // 9pm
+    { p: 1.00, top: [0.018, 0.010, 0.042], hor: [0.115, 0.045, 0.210], cloudLo: [0.17, 0.14, 0.30], cloudHi: [0.42, 0.24, 0.64], stars: 1.00, ink: 1, veil: 1.00 }
+  ];
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function lerpV(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
+
+  function sample(p) {
+    p = Math.max(0, Math.min(1, p));
+    var i = 0;
+    while (i < KEYS.length - 2 && p > KEYS[i + 1].p) i++;
+    var a = KEYS[i], b = KEYS[i + 1];
+    var t = (p - a.p) / (b.p - a.p);
+    t = Math.max(0, Math.min(1, t));
+    var e = t * t * (3 - 2 * t); // smoothstep between keys
+    return {
+      top: lerpV(a.top, b.top, e),
+      hor: lerpV(a.hor, b.hor, e),
+      cloudLo: lerpV(a.cloudLo, b.cloudLo, e),
+      cloudHi: lerpV(a.cloudHi, b.cloudHi, e),
+      stars: lerp(a.stars, b.stars, e),
+      ink: lerp(a.ink, b.ink, e),
+      veil: lerp(a.veil, b.veil, e)
+    };
+  }
+
+  function dayPosition() {
+    var d = new Date();
+    return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400;
+  }
+
+  var cur = sample(dayPosition());
+
+  /* ---------- text + chrome follow the palette ---------- */
+  var headline = document.getElementById('headline');
+  var veilEl = document.getElementById('veil');
+  var themeMeta = document.getElementById('theme-color');
+
+  function applyChrome(s) {
+    // ink: 1 = light text on dark sky, 0 = dark text on light sky
+    var w = Math.round(255 * s.ink);
+    var k = Math.round(26 * (1 - s.ink) + 0 * s.ink);
+    if (s.ink > 0.5) {
+      headline.style.color = '#ffffff';
+      headline.style.textShadow = '0 2px 50px rgba(0,0,0,' + (0.55 * s.ink).toFixed(2) + ')';
+    } else {
+      headline.style.color = '#150a24';
+      headline.style.textShadow = '0 2px 40px rgba(255,255,255,' + (0.35 * (1 - s.ink)).toFixed(2) + ')';
+    }
+    veilEl.style.opacity = s.veil.toFixed(2);
+    var t = s.top;
+    themeMeta.setAttribute('content', 'rgb(' +
+      Math.round(t[0] * 255) + ',' + Math.round(t[1] * 255) + ',' + Math.round(t[2] * 255) + ')');
+    document.body.style.background = 'linear-gradient(to bottom, rgb(' +
+      Math.round(t[0] * 255) + ',' + Math.round(t[1] * 255) + ',' + Math.round(t[2] * 255) + ') 0%, rgb(' +
+      Math.round(s.hor[0] * 255) + ',' + Math.round(s.hor[1] * 255) + ',' + Math.round(s.hor[2] * 255) + ') 100%)';
+    if (w + k < -1) { /* no-op, keeps linters quiet */ }
+  }
+  applyChrome(cur);
+
+  // re-sample every 2 minutes so a page left open crosses dawn/dusk smoothly
+  setInterval(function () {
+    cur = sample(dayPosition());
+    applyChrome(cur);
+  }, 120000);
+
+  /* ---------- WebGL sky ---------- */
   var canvas = document.getElementById('sky');
   if (!canvas) return;
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -104,8 +180,12 @@
     'varying vec2 v_uv;',
     'uniform float u_time;',
     'uniform vec2  u_res;',
+    'uniform vec3  u_skyTop;',
+    'uniform vec3  u_skyHor;',
+    'uniform vec3  u_cloudLo;',
+    'uniform vec3  u_cloudHi;',
+    'uniform float u_stars;',
 
-    // cheap deterministic hash -> value noise -> fbm
     'float hash(vec2 p){',
     '  p = fract(p * vec2(127.13, 311.7));',
     '  p += dot(p, p + 41.27);',
@@ -131,8 +211,7 @@
     '  }',
     '  return sum / norm;',
     '}',
-
-    'float stars(vec2 uv){',
+    'float starfield(vec2 uv){',
     '  vec2 g = uv * 150.0;',
     '  vec2 id = floor(g), f = fract(g) - 0.5;',
     '  float h = hash(id + 7.3);',
@@ -146,11 +225,7 @@
     '  vec2 uv = v_uv;',
     '  float aspect = u_res.x / u_res.y;',
     '  vec2 p = vec2(uv.x * aspect, uv.y);',
-
-    // slow horizontal drift
     '  vec2 base = vec2(p.x * 0.9, p.y * 1.15) - vec2(u_time * 0.0075, 0.0);',
-
-    // domain warp for wispy, non-blobby cloud edges
     '  float warp = fbm(base * 0.65) - 0.5;',
     '  vec2 q = base * 2.2 - warp * 1.2;',
     '  float ridged = 0.0, w = 0.65;',
@@ -163,27 +238,20 @@
     '  }',
     '  float detail = fbm(q * 1.15);',
     '  float field = ridged * (0.55 + 0.9 * detail);',
-
-    // coverage / softness
     '  float amt = smoothstep(0.40, 1.02, field);',
 
-    // night palette, purple-leaning toward the horizon
-    '  vec3 skyTop = vec3(0.020, 0.012, 0.047);',
-    '  vec3 skyHor = vec3(0.145, 0.055, 0.255);',
-    '  vec3 sky = mix(skyHor, skyTop, pow(clamp(uv.y, 0.0, 1.0), 0.75));',
-
-    // clouds lit faintly from below, tinted with the brand violet
+    '  vec3 sky = mix(u_skyHor, u_skyTop, pow(clamp(uv.y, 0.0, 1.0), 0.75));',
     '  float lift = smoothstep(0.85, 0.0, uv.y);',
-    '  vec3 cloudCol = mix(vec3(0.20, 0.16, 0.34), vec3(0.52, 0.30, 0.76), lift);',
+    '  vec3 cloudCol = mix(u_cloudLo, u_cloudHi, lift);',
     '  cloudCol *= 0.65 + 0.75 * detail;',
     '  vec3 col = mix(sky, clamp(0.35 * sky + cloudCol, 0.0, 1.0), amt);',
 
-    // stars only in clear upper sky
-    '  float s = stars(vec2(uv.x * aspect, uv.y * 0.75));',
-    '  s *= (1.0 - amt) * smoothstep(0.10, 0.6, uv.y);',
-    '  col += vec3(0.88, 0.86, 1.0) * s;',
+    '  if (u_stars > 0.01) {',
+    '    float s = starfield(vec2(uv.x * aspect, uv.y * 0.75));',
+    '    s *= (1.0 - amt) * smoothstep(0.10, 0.6, uv.y) * u_stars;',
+    '    col += vec3(0.88, 0.86, 1.0) * s;',
+    '  }',
 
-    // dither to kill banding across the big gradient
     '  float dth = (hash(gl_FragCoord.xy) - 0.5) / 255.0;',
     '  gl_FragColor = vec4(col + dth, 1.0);',
     '}'
@@ -232,8 +300,9 @@
   gl.enableVertexAttribArray(aPos);
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-  var uTime = gl.getUniformLocation(prog, 'u_time');
-  var uRes = gl.getUniformLocation(prog, 'u_res');
+  var U = {};
+  ['u_time', 'u_res', 'u_skyTop', 'u_skyHor', 'u_cloudLo', 'u_cloudHi', 'u_stars']
+    .forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
 
   var dpr = Math.min(window.devicePixelRatio || 1, window.innerWidth < 720 ? 1.5 : 2);
 
@@ -245,7 +314,7 @@
       canvas.height = h;
     }
     gl.viewport(0, 0, w, h);
-    gl.uniform2f(uRes, w, h);
+    gl.uniform2f(U.u_res, w, h);
   }
 
   var resizeTimer;
@@ -265,7 +334,12 @@
     if (document.hidden) { requestAnimationFrame(frame); return; }
     if (now - last >= 1000 / fpsCap) {
       last = now;
-      gl.uniform1f(uTime, (now - start) / 1000);
+      gl.uniform1f(U.u_time, (now - start) / 1000);
+      gl.uniform3fv(U.u_skyTop, cur.top);
+      gl.uniform3fv(U.u_skyHor, cur.hor);
+      gl.uniform3fv(U.u_cloudLo, cur.cloudLo);
+      gl.uniform3fv(U.u_cloudHi, cur.cloudHi);
+      gl.uniform1f(U.u_stars, cur.stars);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       if (!shown) {
         shown = true;
